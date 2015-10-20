@@ -8,9 +8,10 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+
+	"gopkg.in/codegangsta/cli.v1"
 )
 
-var folder string = "/data/ontology"
 var baseURL string = "http://data.bioontology.org/ontologies"
 
 func saveObo(name string, folder string, resp *http.Response) error {
@@ -28,7 +29,7 @@ func saveObo(name string, folder string, resp *http.Response) error {
 
 func DownloadObo(apiKey string, acronym string) *http.Response {
 	client := &http.Client{}
-	req, err := http.NewRequest("GET", fmt.Sprintf("%s/%s/%s", baseURL, acronym, "download"), nil)
+	req, err := http.NewRequest("GET", fmt.Sprintf("%s/%s/%s", baseURL, strings.ToUpper(acronym), "download"), nil)
 	if err != nil {
 		log.Fatalf("Unable to make new request error: %s\n", err)
 	}
@@ -40,12 +41,11 @@ func DownloadObo(apiKey string, acronym string) *http.Response {
 	return resp
 }
 
-func validateEnv() error {
-	if len(os.Getenv("API_KEY")) == 0 {
-		return fmt.Errorf("%s env is not set", "API_KEY")
-	}
-	if len(os.Getenv("ONTOLOGY")) == 0 {
-		return fmt.Errorf("%s env is not set", "ONTOLOGY")
+func validateArgs(c *cli.Context) error {
+	if len(c.StringSlice("bioportal")) > 0 {
+		if !c.IsSet("api-key") {
+			return fmt.Errorf("bioportal api-key is not set")
+		}
 	}
 	return nil
 }
@@ -54,32 +54,49 @@ func normalizeName(name string) string {
 	return strings.ToLower(name)
 }
 
-func ontologies() []string {
-	all := os.Getenv("ONTOLOGY")
-	if strings.ContainsAny(all, ",") {
-		return strings.Split(all, ",")
+func main() {
+	app := cli.NewApp()
+	app.Name = "downloader"
+	app.Usage = "Download obo ontology from bioportal and github"
+	app.Version = "1.0.0"
+	app.Flags = []cli.Flag{
+		cli.StringFlag{
+			Name:  "folder, f",
+			Usage: "Download folder",
+			Value: "/data/ontology",
+		},
+		cli.StringSliceFlag{
+			Name:  "bioportal, bp",
+			Usage: "Name of bioportal ontologies",
+			Value: &cli.StringSlice{""},
+		},
+		cli.StringSliceFlag{
+			Name:  "github, gh",
+			Usage: "Name of github ontologies",
+			Value: &cli.StringSlice{""},
+		},
+		cli.StringFlag{
+			Name:  "api-key",
+			Usage: "Bioportal api key",
+		},
 	}
-	return []string{all}
+	app.Action = DownloadAction
+	app.Run(os.Args)
 }
 
-func main() {
-	// name of output folder
-	if len(os.Args) == 2 {
-		folder = os.Args[1]
-	}
-	// create if the folder does not exist
-	_, err := os.Stat(folder)
-	if os.IsNotExist(err) {
-		os.MkdirAll(folder, 0744)
-	}
-
-	err = validateEnv()
-	if err != nil {
+func DownloadAction(c *cli.Context) {
+	if err := validateArgs(c); err != nil {
 		log.Fatal(err)
 	}
-	for _, onto := range ontologies() {
-		resp := DownloadObo(os.Getenv("API_KEY"), onto)
-		err = saveObo(normalizeName(onto), folder, resp)
+	// create if the folder does not exist
+	_, err := os.Stat(c.String("folder"))
+	if os.IsNotExist(err) {
+		fmt.Printf("creating output folder %s", c.String("folder"))
+		os.MkdirAll(c.String("folder"), 0744)
+	}
+	for _, onto := range c.StringSlice("bioportal") {
+		resp := DownloadObo(c.String("api-key"), onto)
+		err = saveObo(normalizeName(onto), c.String("folder"), resp)
 		if err != nil {
 			log.Fatalf("Unable to save %s obo error: %s", onto, err)
 		}
