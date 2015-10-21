@@ -9,13 +9,26 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/google/go-github/github"
 	"gopkg.in/codegangsta/cli.v1"
 )
 
 var baseURL string = "http://data.bioontology.org/ontologies"
 
-func saveObo(name string, folder string, resp *http.Response) error {
-	output := filepath.Join(folder, name+".obo")
+func downloadFromURL(url string) (*http.Response, error) {
+	client := &http.Client{}
+	req, err := http.NewRequest("GET", url, nil)
+	if err != nil {
+		return nil, err
+	}
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	return resp, err
+}
+
+func saveFileFromResp(output string, resp *http.Response) error {
 	f, err := os.Create(output)
 	if err != nil {
 		return err
@@ -27,22 +40,27 @@ func saveObo(name string, folder string, resp *http.Response) error {
 	return nil
 }
 
-func DownloadObo(apiKey string, acronym string) *http.Response {
+func saveObo(name string, folder string, resp *http.Response) error {
+	output := filepath.Join(folder, name+".obo")
+	return saveFileFromResp(output, resp)
+}
+
+func DownloadObo(apiKey string, acronym string) (*http.Response, error) {
 	client := &http.Client{}
 	req, err := http.NewRequest("GET", fmt.Sprintf("%s/%s/%s", baseURL, strings.ToUpper(acronym), "download"), nil)
 	if err != nil {
-		log.Fatalf("Unable to make new request error: %s\n", err)
+		return nil, err
 	}
 	req.Header.Add("Authorization", fmt.Sprintf("apikey token=%s", apiKey))
 	resp, err := client.Do(req)
 	if err != nil {
-		log.Fatalf("Problem in http request error: %s", err)
+		return nil, err
 	}
-	return resp
+	return resp, nil
 }
 
 func validateArgs(c *cli.Context) error {
-	if len(c.StringSlice("bioportal")) > 0 {
+	if len(c.StringSlice("bioportal")) > 1 {
 		if !c.IsSet("api-key") {
 			return fmt.Errorf("bioportal api-key is not set")
 		}
@@ -57,7 +75,7 @@ func normalizeName(name string) string {
 func main() {
 	app := cli.NewApp()
 	app.Name = "downloader"
-	app.Usage = "Download obo ontology from bioportal and github"
+	app.Usage = "An ontology downloader from bioportal and github"
 	app.Version = "1.0.0"
 	app.Flags = []cli.Flag{
 		cli.StringFlag{
@@ -70,10 +88,9 @@ func main() {
 			Usage: "Name of bioportal ontologies",
 			Value: &cli.StringSlice{""},
 		},
-		cli.StringSliceFlag{
+		cli.BoolFlag{
 			Name:  "github, gh",
-			Usage: "Name of github ontologies",
-			Value: &cli.StringSlice{""},
+			Usage: "Flag to download all ontologies from dictybase github repo",
 		},
 		cli.StringFlag{
 			Name:  "api-key",
@@ -95,11 +112,30 @@ func DownloadAction(c *cli.Context) {
 		os.MkdirAll(c.String("folder"), 0744)
 	}
 	for _, onto := range c.StringSlice("bioportal") {
-		resp := DownloadObo(c.String("api-key"), onto)
-		err = saveObo(normalizeName(onto), c.String("folder"), resp)
+		resp, err := DownloadObo(c.String("api-key"), onto)
 		if err != nil {
+			log.Fatal(err)
+		}
+		if err := saveObo(normalizeName(onto), c.String("folder"), resp); err != nil {
 			log.Fatalf("Unable to save %s obo error: %s", onto, err)
 		}
-		log.Printf("Downloaded ontology %s\n", onto)
+	}
+
+	if c.IsSet("github") {
+		client := github.NewClient(nil)
+		_, ghdir, _, err := client.Repositories.GetContents("dictyBase", "migration-data", "ontologies", nil)
+		if err != nil {
+			log.Fatal(err)
+		}
+		for _, cont := range ghdir {
+			resp, err := downloadFromURL(*cont.DownloadURL)
+			if err != nil {
+				log.Fatalf("Unable to download %s\n", err)
+			}
+			output := filepath.Join(c.String("folder"), filepath.Base(*cont.DownloadURL))
+			if err := saveFileFromResp(output, resp); err != nil {
+				log.Fatalf("Unable to save file %s\n", err)
+			}
+		}
 	}
 }
