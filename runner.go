@@ -3,12 +3,12 @@ package main
 import (
 	"fmt"
 	"io"
-	"log"
 	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
 
+	log "github.com/Sirupsen/logrus"
 	"github.com/google/go-github/github"
 	"gopkg.in/codegangsta/cli.v1"
 )
@@ -96,46 +96,95 @@ func main() {
 			Name:  "api-key",
 			Usage: "Bioportal api key",
 		},
+		cli.StringFlag{
+			Name:  "log-level, ll",
+			Usage: "Logging level",
+			Value: "info",
+		},
 	}
 	app.Action = DownloadAction
 	app.Run(os.Args)
 }
 
 func DownloadAction(c *cli.Context) {
+	log.SetFormatter(&log.TextFormatter{FullTimestamp: true})
+	l := c.String("log-level")
+	switch l {
+	default:
+		log.SetLevel(log.InfoLevel)
+	case "debug":
+		log.SetLevel(log.DebugLevel)
+	case "warn":
+		log.SetLevel(log.WarnLevel)
+	case "fatal":
+		log.SetLevel(log.FatalLevel)
+	case "panic":
+		log.SetLevel(log.PanicLevel)
+	}
+
 	if err := validateArgs(c); err != nil {
-		log.Fatal(err)
+		log.WithFields(log.Fields{
+			"error": "download",
+		}).Fatal(err)
 	}
 	// create if the folder does not exist
 	_, err := os.Stat(c.String("folder"))
 	if os.IsNotExist(err) {
-		fmt.Printf("creating output folder %s", c.String("folder"))
+		log.WithFields(log.Fields{
+			"folder": c.String("folder"),
+		}).Info("creating output folder")
 		os.MkdirAll(c.String("folder"), 0744)
 	}
 	for _, onto := range c.StringSlice("bioportal") {
 		resp, err := DownloadObo(c.String("api-key"), onto)
 		if err != nil {
-			log.Fatal(err)
+			log.WithFields(log.Fields{
+				"error":  "download",
+				"source": "bioportal",
+			}).Fatal(err)
 		}
 		if err := saveObo(normalizeName(onto), c.String("folder"), resp); err != nil {
-			log.Fatalf("Unable to save %s obo error: %s", onto, err)
+			log.WithFields(log.Fields{
+				"error":  err,
+				"source": "bioportal",
+				"file":   onto,
+			}).Fatal("Unable to download")
 		}
+		log.WithFields(log.Fields{
+			"source": "bioportal",
+			"file":   onto,
+		}).Info("Downloaded file")
 	}
 
 	if c.IsSet("github") {
 		client := github.NewClient(nil)
 		_, ghdir, _, err := client.Repositories.GetContents("dictyBase", "migration-data", "ontologies", nil)
 		if err != nil {
-			log.Fatal(err)
+			log.WithFields(log.Fields{
+				"source": "github",
+			}).Fatal(err)
 		}
 		for _, cont := range ghdir {
 			resp, err := downloadFromURL(*cont.DownloadURL)
 			if err != nil {
-				log.Fatalf("Unable to download %s\n", err)
+				log.WithFields(log.Fields{
+					"error":  err,
+					"source": "github",
+					"file":   *cont.Name,
+				}).Fatal("Unable to download")
 			}
 			output := filepath.Join(c.String("folder"), filepath.Base(*cont.DownloadURL))
 			if err := saveFileFromResp(output, resp); err != nil {
-				log.Fatalf("Unable to save file %s\n", err)
+				log.WithFields(log.Fields{
+					"error":  err,
+					"source": "github",
+					"file":   output,
+				}).Fatal("Unable to save")
 			}
+			log.WithFields(log.Fields{
+				"source": "github",
+				"file":   output,
+			}).Info("Downloaded file")
 		}
 	}
 }
