@@ -93,8 +93,9 @@ func main() {
 			Usage: "Flag to download all ontologies from dictybase github repo",
 		},
 		cli.StringFlag{
-			Name:  "api-key",
-			Usage: "Bioportal api key",
+			Name:   "api-key",
+			EnvVar: "BIOPORTAL_API_KEY",
+			Usage:  "Bioportal api key",
 		},
 		cli.StringFlag{
 			Name:  "log-level, ll",
