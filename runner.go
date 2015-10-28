@@ -8,12 +8,28 @@ import (
 	"path/filepath"
 	"strings"
 
+	"golang.org/x/net/context"
+
 	log "github.com/Sirupsen/logrus"
+	"github.com/coreos/etcd/client"
 	"github.com/google/go-github/github"
 	"gopkg.in/codegangsta/cli.v1"
 )
 
 var baseURL string = "http://data.bioontology.org/ontologies"
+
+func getEtcdAPIHandler(c *cli.Context) (client.KeysAPI, error) {
+	url := c.String("etcd-host") + ":" + c.String("etcd-port")
+	cfg := client.Config{
+		Endpoints: []string{url},
+		Transport: client.DefaultTransport,
+	}
+	cl, err := client.New(cfg)
+	if err != nil {
+		return nil, err
+	}
+	return client.NewKeysAPI(cl), nil
+}
 
 func downloadFromURL(url string) (*http.Response, error) {
 	client := &http.Client{}
@@ -197,5 +213,24 @@ func DownloadAction(c *cli.Context) {
 				"file":   output,
 			}).Info("Downloaded file")
 		}
+	}
+
+	// check if etcd host is given
+	if len(c.String("etcd-host")) > 1 && len(c.String("etcd-port")) > 1 {
+		api, err := getEtcdAPIHandler(c)
+		if err != nil {
+			log.WithFields(log.Fields{
+				"type": "etcd-client",
+			}).Fatal(err)
+		}
+		_, err = api.Create(context.Background(), "/migration/download", "complete")
+		if err != nil {
+			log.WithFields(log.Fields{
+				"type": "etcd-client",
+			}).Fatal(err)
+		}
+		log.WithFields(log.Fields{
+			"type": "etcd-client",
+		}).Info("added download completion in etcd")
 	}
 }
