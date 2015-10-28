@@ -19,7 +19,7 @@ import (
 var baseURL string = "http://data.bioontology.org/ontologies"
 
 func getEtcdAPIHandler(c *cli.Context) (client.KeysAPI, error) {
-	url := c.String("etcd-host") + ":" + c.String("etcd-port")
+	url := "http://" + c.String("etcd-host") + ":" + c.String("etcd-port")
 	cfg := client.Config{
 		Endpoints: []string{url},
 		Transport: client.DefaultTransport,
