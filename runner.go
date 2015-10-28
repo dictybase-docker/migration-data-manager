@@ -61,7 +61,7 @@ func DownloadObo(apiKey string, acronym string) (*http.Response, error) {
 
 func validateArgs(c *cli.Context) error {
 	if len(c.StringSlice("bioportal")) > 1 {
-		if !c.IsSet("api-key") {
+		if len(c.String("api-key")) < 1 {
 			return fmt.Errorf("bioportal api-key is not set")
 		}
 	}
@@ -101,6 +101,16 @@ func main() {
 			Name:  "log-level, ll",
 			Usage: "Logging level",
 			Value: "info",
+		},
+		cli.StringFlag{
+			Name:   "etcd-host",
+			EnvVar: "ETCD_CLIENT_SERVICE_HOST",
+			Usage:  "ip address of etcd instance",
+		},
+		cli.StringFlag{
+			Name:   "etcd-port",
+			EnvVar: "ETCD_CLIENT_SERVICE_PORT",
+			Usage:  "port number of etcd instance",
 		},
 	}
 	app.Action = DownloadAction
