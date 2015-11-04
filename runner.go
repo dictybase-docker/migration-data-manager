@@ -21,6 +21,7 @@ import (
 
 var baseURL string = "http://data.bioontology.org/ontologies"
 var mURL string = "https://northwestern.box.com/shared/static/t35zifjta5l8nk3mxminfaff1dlhfitz.bz2"
+var gpadURL string = "http://www.ebi.ac.uk/QuickGO/GAnnotation?format=gpa&limit=-1&db=dictyBase"
 
 func getEtcdAPIHandler(c *cli.Context) (client.KeysAPI, error) {
 	url := "http://" + c.String("etcd-host") + ":" + c.String("etcd-port")
@@ -114,6 +115,10 @@ func main() {
 			Name:  "github, gh",
 			Usage: "Flag to download all ontologies from dictybase github repo",
 		},
+		cli.BoolFlag{
+			Name:  "gpad",
+			Usage: "Flag to download dictybase gpad annotations",
+		},
 		cli.StringFlag{
 			Name:   "api-key",
 			EnvVar: "BIOPORTAL_API_KEY",
@@ -159,22 +164,27 @@ func DownloadAction(c *cli.Context) {
 	wg := new(sync.WaitGroup)
 	if len(c.String("bioportal")) > 2 {
 		wg.Add(1)
-		BioPortalAction(c, wg)
+		go BioPortalAction(c, wg)
 	}
 
 	if c.IsSet("github") {
 		wg.Add(1)
-		GithubAction(c, wg)
+		go GithubAction(c, wg)
 	}
 
 	if c.IsSet("migration-data") {
 		wg.Add(1)
-		MigrationAction(c, wg)
+		go MigrationAction(c, wg)
 		log.WithFields(log.Fields{
 			"source": "box",
 			"file":   "migration-data.tar.bz2",
 		}).Info("extracted migration file")
 	}
+	if c.IsSet("gpad") {
+		wg.Add(1)
+		go DownloadGAF(c, wg)
+	}
+
 	wg.Wait()
 
 	// check if etcd host is given
@@ -301,6 +311,17 @@ func CreateOntologyFolder(c *cli.Context) {
 	}
 }
 
+func CreateFolder(folder string) {
+	// create if the folder does not exist
+	_, err := os.Stat(folder)
+	if os.IsNotExist(err) {
+		log.WithFields(log.Fields{
+			"folder": folder,
+		}).Info("creating output folder")
+		os.MkdirAll(folder, 0744)
+	}
+}
+
 func CreateDownloadFolder(c *cli.Context) {
 	// create if the folder does not exist
 	_, err := os.Stat(c.String("download-folder"))
@@ -369,4 +390,29 @@ func MigrationAction(c *cli.Context, wg *sync.WaitGroup) {
 		"file":   "migration-data.tar.bz2",
 	}).Info("Downloaded file")
 	untarGunzip(c, output)
+}
+
+func DownloadGAF(c *cli.Context, wg *sync.WaitGroup) {
+	defer wg.Done()
+	CreateFolder(filepath.Join(c.String("download-folder"), "gpad"))
+	resp, err := downloadFromURL(gpadURL)
+	if err != nil {
+		log.WithFields(log.Fields{
+			"error":  err,
+			"source": "ebi",
+			"url":    gpadURL,
+		}).Fatal("Unable to download")
+	}
+	output := filepath.Join(c.String("download-folder"), "gpad", "dicty.gpad")
+	if err := saveFileFromResp(output, resp); err != nil {
+		log.WithFields(log.Fields{
+			"error":  err,
+			"source": "ebi",
+			"file":   "dicty.gpad",
+		}).Fatal("Unable to save")
+	}
+	log.WithFields(log.Fields{
+		"source": "ebi",
+		"file":   "dicty.gpad",
+	}).Info("Downloaded file")
 }
