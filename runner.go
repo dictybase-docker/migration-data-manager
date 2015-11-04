@@ -17,6 +17,7 @@ import (
 )
 
 var baseURL string = "http://data.bioontology.org/ontologies"
+var mURL string = "https://northwestern.box.com/shared/static/t35zifjta5l8nk3mxminfaff1dlhfitz.bz2"
 
 func getEtcdAPIHandler(c *cli.Context) (client.KeysAPI, error) {
 	url := "http://" + c.String("etcd-host") + ":" + c.String("etcd-port")
@@ -95,8 +96,17 @@ func main() {
 	app.Version = "1.0.0"
 	app.Flags = []cli.Flag{
 		cli.StringFlag{
-			Name:  "folder, f",
-			Usage: "Download folder",
+			Name:  "download-folder, df",
+			Usage: "Download folder for migration data",
+			Value: "/download",
+		},
+		cli.BoolFlag{
+			Name:  "migration-data, md",
+			Usage: "Flag to download and extract migration data from box",
+		},
+		cli.StringFlag{
+			Name:  "ontology-folder, of",
+			Usage: "Ontology download folder",
 			Value: "/data/ontology",
 		},
 		cli.StringSliceFlag{
@@ -213,6 +223,29 @@ func DownloadAction(c *cli.Context) {
 				"file":   output,
 			}).Info("Downloaded file")
 		}
+	}
+
+	if c.IsSet("migration-data") {
+		resp, err := downloadFromURL(mURL)
+		if err != nil {
+			log.WithFields(log.Fields{
+				"error":  err,
+				"source": "box",
+				"url":    mURL,
+			}).Fatal("Unable to download")
+		}
+		output := filepath.Join(c.String("download-folder"), "migration-data.tar.bz2")
+		if err := saveFileFromResp(output, resp); err != nil {
+			log.WithFields(log.Fields{
+				"error":  err,
+				"source": "box",
+				"file":   "migration-data.tar.bz2",
+			}).Fatal("Unable to save")
+		}
+		log.WithFields(log.Fields{
+			"source": "box",
+			"file":   "migration-data.tar.bz2",
+		}).Info("Downloaded file")
 	}
 
 	// check if etcd host is given
