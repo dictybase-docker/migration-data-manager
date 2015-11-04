@@ -100,7 +100,7 @@ func main() {
 		cli.StringFlag{
 			Name:  "download-folder, df",
 			Usage: "Download folder for migration data",
-			Value: "/download",
+			Value: "/data",
 		},
 		cli.BoolFlag{
 			Name:  "migration-data, md",
