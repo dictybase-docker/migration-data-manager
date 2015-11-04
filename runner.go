@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 
 	"golang.org/x/net/context"
 
@@ -92,7 +93,7 @@ func normalizeName(name string) string {
 func main() {
 	app := cli.NewApp()
 	app.Name = "downloader"
-	app.Usage = "An ontology downloader from bioportal and github"
+	app.Usage = "A downloader for migration data"
 	app.Version = "1.0.0"
 	app.Flags = []cli.Flag{
 		cli.StringFlag{
@@ -103,11 +104,6 @@ func main() {
 		cli.BoolFlag{
 			Name:  "migration-data, md",
 			Usage: "Flag to download and extract migration data from box",
-		},
-		cli.StringFlag{
-			Name:  "ontology-folder, of",
-			Usage: "Ontology download folder",
-			Value: "/data/ontology",
 		},
 		cli.StringSliceFlag{
 			Name:  "bioportal, bp",
@@ -159,17 +155,27 @@ func DownloadAction(c *cli.Context) {
 		log.SetLevel(log.PanicLevel)
 	}
 
-	if len(c.String("bioportal")) > 1 {
-		BioPortalAction(c)
+	CreateDownloadFolder(c)
+	wg := new(sync.WaitGroup)
+	if len(c.String("bioportal")) > 2 {
+		wg.Add(1)
+		BioPortalAction(c, wg)
 	}
 
 	if c.IsSet("github") {
-		GithubAction(c)
+		wg.Add(1)
+		GithubAction(c, wg)
 	}
 
 	if c.IsSet("migration-data") {
-		MigrationAction(c)
+		wg.Add(1)
+		MigrationAction(c, wg)
+		log.WithFields(log.Fields{
+			"source": "box",
+			"file":   "migration-data.tar.bz2",
+		}).Info("extracted migration file")
 	}
+	wg.Wait()
 
 	// check if etcd host is given
 	if len(c.String("etcd-host")) > 1 && len(c.String("etcd-port")) > 1 {
@@ -195,7 +201,8 @@ func WriteToEtcd(c *cli.Context) {
 	}).Info("added download completion in etcd")
 }
 
-func untarGunzip(file string) {
+func untarGunzip(c *cli.Context, file string) {
+	folder := c.String("download-folder")
 	reader, err := os.Open(file)
 	defer reader.Close()
 	if err != nil {
@@ -223,13 +230,13 @@ func untarGunzip(file string) {
 		path := header.Name
 		switch header.Typeflag {
 		case tar.TypeDir:
-			if err := os.Mkdir(path, os.FileMode(header.Mode)); err != nil {
+			if err := os.Mkdir(filepath.Join(folder, path), os.FileMode(header.Mode)); err != nil {
 				log.WithFields(log.Fields{
 					"error": "creating directory",
 				}).Fatal(err)
 			}
 		case tar.TypeReg:
-			writer, err := os.Create(path)
+			writer, err := os.Create(filepath.Join(folder, path))
 			defer writer.Close()
 			if err != nil {
 				log.WithFields(log.Fields{
@@ -252,7 +259,8 @@ func untarGunzip(file string) {
 	}
 }
 
-func BioPortalAction(c *cli.Context) {
+func BioPortalAction(c *cli.Context, wg *sync.WaitGroup) {
+	defer wg.Done()
 	if err := validateArgs(c); err != nil {
 		log.WithFields(log.Fields{
 			"error": "download",
@@ -267,7 +275,7 @@ func BioPortalAction(c *cli.Context) {
 				"source": "bioportal",
 			}).Fatal(err)
 		}
-		if err := saveObo(normalizeName(onto), c.String("folder"), resp); err != nil {
+		if err := saveObo(normalizeName(onto), filepath.Join(c.String("download-folder"), "ontology"), resp); err != nil {
 			log.WithFields(log.Fields{
 				"error":  err,
 				"source": "bioportal",
@@ -284,16 +292,28 @@ func BioPortalAction(c *cli.Context) {
 
 func CreateOntologyFolder(c *cli.Context) {
 	// create if the folder does not exist
-	_, err := os.Stat(c.String("folder"))
+	_, err := os.Stat(filepath.Join(c.String("download-folder"), "ontology"))
 	if os.IsNotExist(err) {
 		log.WithFields(log.Fields{
-			"folder": c.String("folder"),
+			"folder": c.String("download-folder"),
+		}).Info("creating output folder")
+		os.MkdirAll(filepath.Join(c.String("download-folder"), "ontology"), 0744)
+	}
+}
+
+func CreateDownloadFolder(c *cli.Context) {
+	// create if the folder does not exist
+	_, err := os.Stat(c.String("download-folder"))
+	if os.IsNotExist(err) {
+		log.WithFields(log.Fields{
+			"folder": c.String("download-folder"),
 		}).Info("creating output folder")
 		os.MkdirAll(c.String("folder"), 0744)
 	}
 }
 
-func GithubAction(c *cli.Context) {
+func GithubAction(c *cli.Context, wg *sync.WaitGroup) {
+	defer wg.Done()
 	CreateOntologyFolder(c)
 	client := github.NewClient(nil)
 	_, ghdir, _, err := client.Repositories.GetContents("dictyBase", "migration-data", "ontologies", nil)
@@ -311,7 +331,7 @@ func GithubAction(c *cli.Context) {
 				"file":   *cont.Name,
 			}).Fatal("Unable to download")
 		}
-		output := filepath.Join(c.String("folder"), filepath.Base(*cont.DownloadURL))
+		output := filepath.Join(c.String("download-folder"), "ontology", filepath.Base(*cont.DownloadURL))
 		if err := saveFileFromResp(output, resp); err != nil {
 			log.WithFields(log.Fields{
 				"error":  err,
@@ -326,7 +346,8 @@ func GithubAction(c *cli.Context) {
 	}
 }
 
-func MigrationAction(c *cli.Context) {
+func MigrationAction(c *cli.Context, wg *sync.WaitGroup) {
+	defer wg.Done()
 	resp, err := downloadFromURL(mURL)
 	if err != nil {
 		log.WithFields(log.Fields{
@@ -347,5 +368,5 @@ func MigrationAction(c *cli.Context) {
 		"source": "box",
 		"file":   "migration-data.tar.bz2",
 	}).Info("Downloaded file")
-	untarGunzip(output)
+	untarGunzip(c, output)
 }
