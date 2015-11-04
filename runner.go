@@ -79,10 +79,8 @@ func DownloadObo(apiKey string, acronym string) (*http.Response, error) {
 }
 
 func validateArgs(c *cli.Context) error {
-	if len(c.StringSlice("bioportal")) > 1 {
-		if len(c.String("api-key")) < 1 {
-			return fmt.Errorf("bioportal api-key is not set")
-		}
+	if len(c.String("api-key")) < 1 {
+		return fmt.Errorf("bioportal api-key is not set")
 	}
 	return nil
 }
@@ -161,114 +159,40 @@ func DownloadAction(c *cli.Context) {
 		log.SetLevel(log.PanicLevel)
 	}
 
-	if err := validateArgs(c); err != nil {
-		log.WithFields(log.Fields{
-			"error": "download",
-		}).Fatal(err)
-	}
-	// create if the folder does not exist
-	_, err := os.Stat(c.String("folder"))
-	if os.IsNotExist(err) {
-		log.WithFields(log.Fields{
-			"folder": c.String("folder"),
-		}).Info("creating output folder")
-		os.MkdirAll(c.String("folder"), 0744)
-	}
-	for _, onto := range c.StringSlice("bioportal") {
-		resp, err := DownloadObo(c.String("api-key"), onto)
-		if err != nil {
-			log.WithFields(log.Fields{
-				"error":  "download",
-				"source": "bioportal",
-			}).Fatal(err)
-		}
-		if err := saveObo(normalizeName(onto), c.String("folder"), resp); err != nil {
-			log.WithFields(log.Fields{
-				"error":  err,
-				"source": "bioportal",
-				"file":   onto,
-			}).Fatal("Unable to download")
-		}
-		log.WithFields(log.Fields{
-			"source": "bioportal",
-			"file":   onto,
-		}).Info("Downloaded file")
+	if len(c.String("bioportal")) > 1 {
+		BioPortalAction(c)
 	}
 
 	if c.IsSet("github") {
-		client := github.NewClient(nil)
-		_, ghdir, _, err := client.Repositories.GetContents("dictyBase", "migration-data", "ontologies", nil)
-		if err != nil {
-			log.WithFields(log.Fields{
-				"source": "github",
-			}).Fatal(err)
-		}
-		for _, cont := range ghdir {
-			resp, err := downloadFromURL(*cont.DownloadURL)
-			if err != nil {
-				log.WithFields(log.Fields{
-					"error":  err,
-					"source": "github",
-					"file":   *cont.Name,
-				}).Fatal("Unable to download")
-			}
-			output := filepath.Join(c.String("folder"), filepath.Base(*cont.DownloadURL))
-			if err := saveFileFromResp(output, resp); err != nil {
-				log.WithFields(log.Fields{
-					"error":  err,
-					"source": "github",
-					"file":   output,
-				}).Fatal("Unable to save")
-			}
-			log.WithFields(log.Fields{
-				"source": "github",
-				"file":   output,
-			}).Info("Downloaded file")
-		}
+		GithubAction(c)
 	}
 
 	if c.IsSet("migration-data") {
-		resp, err := downloadFromURL(mURL)
-		if err != nil {
-			log.WithFields(log.Fields{
-				"error":  err,
-				"source": "box",
-				"url":    mURL,
-			}).Fatal("Unable to download")
-		}
-		output := filepath.Join(c.String("download-folder"), "migration-data.tar.bz2")
-		if err := saveFileFromResp(output, resp); err != nil {
-			log.WithFields(log.Fields{
-				"error":  err,
-				"source": "box",
-				"file":   "migration-data.tar.bz2",
-			}).Fatal("Unable to save")
-		}
-		log.WithFields(log.Fields{
-			"source": "box",
-			"file":   "migration-data.tar.bz2",
-		}).Info("Downloaded file")
-		untarGunzip(output)
+		MigrationAction(c)
 	}
 
 	// check if etcd host is given
 	if len(c.String("etcd-host")) > 1 && len(c.String("etcd-port")) > 1 {
-		api, err := getEtcdAPIHandler(c)
-		if err != nil {
-			log.WithFields(log.Fields{
-				"type": "etcd-client",
-			}).Fatal(err)
-		}
-		_, err = api.Create(context.Background(), "/migration/download", "complete")
-		if err != nil {
-			log.WithFields(log.Fields{
-				"type": "etcd-client",
-			}).Fatal(err)
-		}
+		WriteToEtcd(c)
+	}
+}
+
+func WriteToEtcd(c *cli.Context) {
+	api, err := getEtcdAPIHandler(c)
+	if err != nil {
 		log.WithFields(log.Fields{
 			"type": "etcd-client",
-		}).Info("added download completion in etcd")
+		}).Fatal(err)
 	}
+	_, err = api.Create(context.Background(), "/migration/download", "complete")
+	if err != nil {
+		log.WithFields(log.Fields{
+			"type": "etcd-client",
+		}).Fatal(err)
+	}
+	log.WithFields(log.Fields{
+		"type": "etcd-client",
+	}).Info("added download completion in etcd")
 }
 
 func untarGunzip(file string) {
@@ -326,4 +250,102 @@ func untarGunzip(file string) {
 			}).Info("No action taken")
 		}
 	}
+}
+
+func BioPortalAction(c *cli.Context) {
+	if err := validateArgs(c); err != nil {
+		log.WithFields(log.Fields{
+			"error": "download",
+		}).Fatal(err)
+	}
+	CreateOntologyFolder(c)
+	for _, onto := range c.StringSlice("bioportal") {
+		resp, err := DownloadObo(c.String("api-key"), onto)
+		if err != nil {
+			log.WithFields(log.Fields{
+				"error":  "download",
+				"source": "bioportal",
+			}).Fatal(err)
+		}
+		if err := saveObo(normalizeName(onto), c.String("folder"), resp); err != nil {
+			log.WithFields(log.Fields{
+				"error":  err,
+				"source": "bioportal",
+				"file":   onto,
+			}).Fatal("Unable to download")
+		}
+		log.WithFields(log.Fields{
+			"source": "bioportal",
+			"file":   onto,
+		}).Info("Downloaded file")
+	}
+
+}
+
+func CreateOntologyFolder(c *cli.Context) {
+	// create if the folder does not exist
+	_, err := os.Stat(c.String("folder"))
+	if os.IsNotExist(err) {
+		log.WithFields(log.Fields{
+			"folder": c.String("folder"),
+		}).Info("creating output folder")
+		os.MkdirAll(c.String("folder"), 0744)
+	}
+}
+
+func GithubAction(c *cli.Context) {
+	CreateOntologyFolder(c)
+	client := github.NewClient(nil)
+	_, ghdir, _, err := client.Repositories.GetContents("dictyBase", "migration-data", "ontologies", nil)
+	if err != nil {
+		log.WithFields(log.Fields{
+			"source": "github",
+		}).Fatal(err)
+	}
+	for _, cont := range ghdir {
+		resp, err := downloadFromURL(*cont.DownloadURL)
+		if err != nil {
+			log.WithFields(log.Fields{
+				"error":  err,
+				"source": "github",
+				"file":   *cont.Name,
+			}).Fatal("Unable to download")
+		}
+		output := filepath.Join(c.String("folder"), filepath.Base(*cont.DownloadURL))
+		if err := saveFileFromResp(output, resp); err != nil {
+			log.WithFields(log.Fields{
+				"error":  err,
+				"source": "github",
+				"file":   output,
+			}).Fatal("Unable to save")
+		}
+		log.WithFields(log.Fields{
+			"source": "github",
+			"file":   output,
+		}).Info("Downloaded file")
+	}
+}
+
+func MigrationAction(c *cli.Context) {
+	resp, err := downloadFromURL(mURL)
+	if err != nil {
+		log.WithFields(log.Fields{
+			"error":  err,
+			"source": "box",
+			"url":    mURL,
+		}).Fatal("Unable to download")
+	}
+	output := filepath.Join(c.String("download-folder"), "migration-data.tar.bz2")
+	if err := saveFileFromResp(output, resp); err != nil {
+		log.WithFields(log.Fields{
+			"error":  err,
+			"source": "box",
+			"file":   "migration-data.tar.bz2",
+		}).Fatal("Unable to save")
+	}
+	log.WithFields(log.Fields{
+		"source": "box",
+		"file":   "migration-data.tar.bz2",
+	}).Info("Downloaded file")
+	untarGunzip(output)
 }
