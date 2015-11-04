@@ -1,6 +1,8 @@
 package main
 
 import (
+	"archive/tar"
+	"compress/bzip2"
 	"fmt"
 	"io"
 	"net/http"
@@ -246,6 +248,7 @@ func DownloadAction(c *cli.Context) {
 			"source": "box",
 			"file":   "migration-data.tar.bz2",
 		}).Info("Downloaded file")
+		untarGunzip(output)
 	}
 
 	// check if etcd host is given
@@ -265,5 +268,62 @@ func DownloadAction(c *cli.Context) {
 		log.WithFields(log.Fields{
 			"type": "etcd-client",
 		}).Info("added download completion in etcd")
+	}
+}
+
+func untarGunzip(file string) {
+	reader, err := os.Open(file)
+	defer reader.Close()
+	if err != nil {
+		log.WithFields(log.Fields{
+			"file":  file,
+			"error": "open file",
+		}).Fatal(err)
+	}
+	archive := bzip2.NewReader(reader)
+	tarReader := tar.NewReader(archive)
+	if err != nil {
+		log.WithFields(log.Fields{
+			"error": "open tar file",
+		}).Fatal(err)
+	}
+	for {
+		header, err := tarReader.Next()
+		if err == io.EOF {
+			break
+		} else if err != nil {
+			log.WithFields(log.Fields{
+				"error": "reading tar member",
+			}).Fatal(err)
+		}
+		path := header.Name
+		switch header.Typeflag {
+		case tar.TypeDir:
+			if err := os.Mkdir(path, os.FileMode(header.Mode)); err != nil {
+				log.WithFields(log.Fields{
+					"error": "creating directory",
+				}).Fatal(err)
+			}
+		case tar.TypeReg:
+			writer, err := os.Create(path)
+			defer writer.Close()
+			if err != nil {
+				log.WithFields(log.Fields{
+					"error": "opening file for writing",
+				}).Fatal(err)
+			}
+			_, err = io.Copy(writer, tarReader)
+			if err != nil {
+				log.WithFields(log.Fields{
+					"error": "writing member file",
+				}).Fatal(err)
+			}
+		default:
+			log.WithFields(log.Fields{
+				"error": "Unknown action",
+				"file":  path,
+				"type":  header.Typeflag,
+			}).Info("No action taken")
+		}
 	}
 }
