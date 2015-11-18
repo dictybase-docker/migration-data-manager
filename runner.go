@@ -22,6 +22,7 @@ import (
 var baseURL string = "http://data.bioontology.org/ontologies"
 var mURL string = "https://northwestern.box.com/shared/static/t35zifjta5l8nk3mxminfaff1dlhfitz.bz2"
 var gpadURL string = "http://www.ebi.ac.uk/QuickGO/GAnnotation?format=gpa&limit=-1&db=dictyBase"
+var purl string = "http://purl.obolibrary.org/obo"
 
 func getEtcdAPIHandler(c *cli.Context) (client.KeysAPI, error) {
 	url := "http://" + c.String("etcd-host") + ":" + c.String("etcd-port")
@@ -66,13 +67,12 @@ func saveObo(name string, folder string, resp *http.Response) error {
 	return saveFileFromResp(output, resp)
 }
 
-func DownloadObo(apiKey string, acronym string) (*http.Response, error) {
+func DownloadObo(name string) (*http.Response, error) {
 	client := &http.Client{}
-	req, err := http.NewRequest("GET", fmt.Sprintf("%s/%s/%s", baseURL, strings.ToUpper(acronym), "download"), nil)
+	req, err := http.NewRequest("GET", fmt.Sprintf("%s/%s.obo", purl, name), nil)
 	if err != nil {
 		return nil, err
 	}
-	req.Header.Add("Authorization", fmt.Sprintf("apikey token=%s", apiKey))
 	resp, err := client.Do(req)
 	if err != nil {
 		return nil, err
@@ -107,8 +107,8 @@ func main() {
 			Usage: "Flag to download and extract migration data from box",
 		},
 		cli.StringSliceFlag{
-			Name:  "bioportal, bp",
-			Usage: "Name of bioportal ontologies",
+			Name:  "obo",
+			Usage: "Name of ontologies to download using purl url",
 			Value: &cli.StringSlice{""},
 		},
 		cli.BoolFlag{
@@ -118,11 +118,6 @@ func main() {
 		cli.BoolFlag{
 			Name:  "gpad",
 			Usage: "Flag to download dictybase gpad annotations",
-		},
-		cli.StringFlag{
-			Name:   "api-key",
-			EnvVar: "BIOPORTAL_API_KEY",
-			Usage:  "Bioportal api key",
 		},
 		cli.StringFlag{
 			Name:  "log-level, ll",
@@ -162,9 +157,9 @@ func DownloadAction(c *cli.Context) {
 
 	CreateDownloadFolder(c)
 	wg := new(sync.WaitGroup)
-	if len(c.String("bioportal")) > 2 {
+	if len(c.String("obo")) > 2 {
 		wg.Add(1)
-		go BioPortalAction(c, wg)
+		go OboAction(c, wg)
 	}
 
 	if c.IsSet("github") {
@@ -269,31 +264,26 @@ func untarGunzip(c *cli.Context, file string) {
 	}
 }
 
-func BioPortalAction(c *cli.Context, wg *sync.WaitGroup) {
+func OboAction(c *cli.Context, wg *sync.WaitGroup) {
 	defer wg.Done()
-	if err := validateArgs(c); err != nil {
-		log.WithFields(log.Fields{
-			"error": "download",
-		}).Fatal(err)
-	}
 	CreateOntologyFolder(c)
-	for _, onto := range c.StringSlice("bioportal") {
-		resp, err := DownloadObo(c.String("api-key"), onto)
+	for _, onto := range c.StringSlice("obo") {
+		resp, err := DownloadObo(onto)
 		if err != nil {
 			log.WithFields(log.Fields{
 				"error":  "download",
-				"source": "bioportal",
+				"source": "purl",
 			}).Fatal(err)
 		}
-		if err := saveObo(normalizeName(onto), filepath.Join(c.String("download-folder"), "ontology"), resp); err != nil {
+		if err := saveObo(onto, filepath.Join(c.String("download-folder"), "ontology"), resp); err != nil {
 			log.WithFields(log.Fields{
 				"error":  err,
-				"source": "bioportal",
+				"source": "purl",
 				"file":   onto,
 			}).Fatal("Unable to download")
 		}
 		log.WithFields(log.Fields{
-			"source": "bioportal",
+			"source": "purl",
 			"file":   onto,
 		}).Info("Downloaded file")
 	}
