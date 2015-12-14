@@ -19,10 +19,9 @@ import (
 	"gopkg.in/codegangsta/cli.v1"
 )
 
-var baseURL string = "http://data.bioontology.org/ontologies"
 var mURL string = "https://northwestern.box.com/shared/static/t35zifjta5l8nk3mxminfaff1dlhfitz.bz2"
 var gpadURL string = "http://www.ebi.ac.uk/QuickGO/GAnnotation?format=gpa&limit=-1&db=dictyBase"
-var purl string = "http://purl.obolibrary.org/obo"
+var chadoURL string = "http://betatest.dictybase.org/chado"
 
 func getEtcdAPIHandler(c *cli.Context) (client.KeysAPI, error) {
 	url := "http://" + c.String("etcd-host") + ":" + c.String("etcd-port")
@@ -69,7 +68,7 @@ func saveObo(name string, folder string, resp *http.Response) error {
 
 func DownloadObo(name string) (*http.Response, error) {
 	client := &http.Client{}
-	req, err := http.NewRequest("GET", fmt.Sprintf("%s/%s.obo", purl, name), nil)
+	req, err := http.NewRequest("GET", fmt.Sprintf("%s/%s.obo", chadoURL, name), nil)
 	if err != nil {
 		return nil, err
 	}
