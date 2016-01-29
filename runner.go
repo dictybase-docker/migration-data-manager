@@ -21,7 +21,8 @@ import (
 
 var mURL string = "https://northwestern.box.com/shared/static/t35zifjta5l8nk3mxminfaff1dlhfitz.bz2"
 var gpadURL string = "http://www.ebi.ac.uk/QuickGO/GAnnotation?format=gpa&limit=-1&db=dictyBase"
-var chadoURL string = "http://betatest.dictybase.org/chado"
+var chadoURL string = "http://betatest.dictybase.org/bioontologies/chado"
+var ghURL string = "http://betatest.dictybase.org/bioontologies/dictybase"
 
 func getEtcdAPIHandler(c *cli.Context) (client.KeysAPI, error) {
 	url := "http://" + c.String("etcd-host") + ":" + c.String("etcd-port")
