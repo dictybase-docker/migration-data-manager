@@ -1,0 +1,43 @@
+{
+    "apiVersion": "v1",
+    "kind": "Pod",
+    "metadata": {
+        "name": "data-manager"
+    },
+    "spec": {
+        "containers": [
+            {
+                "name": "data-manager",
+                "image": "dictybase/migration-data-manager",
+                "volumeMounts": [
+                    {
+                        "mountPath": "/data",
+                        "name": "data-manager-folder"
+                    }
+                ],
+                "command": [
+                    "app",
+                    "--obo",
+                    "so",
+                    "--obo",
+                    "ro",
+                    "--obo",
+                    "eco",
+                    "--obo",
+                    "go",
+                    "--github",
+                    "--gpad"
+                ]
+            }
+        ],
+        "volumes": [
+            {
+                "name": "data-manager-folder",
+                "hostPath": {
+                    "path":  "/home/cybersiddhu/Projects/docker-images/wheel-migration/export/data"
+                }
+            }
+        ],
+        "restartPolicy": "Never"
+    }
+}
