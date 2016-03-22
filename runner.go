@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"sync"
 
@@ -23,6 +24,7 @@ var mURL string = "https://northwestern.box.com/shared/static/t35zifjta5l8nk3mxm
 var gpadURL string = "http://www.ebi.ac.uk/QuickGO/GAnnotation?format=gpa&limit=-1&db=dictyBase"
 var chadoURL string = "http://betatest.dictybase.org/bioontologies/chado"
 var ghURL string = "http://betatest.dictybase.org/bioontologies/dictybase"
+var rgxp = regexp.MustCompile(`^\s+%`)
 
 func getEtcdAPIHandler(c *cli.Context) (client.KeysAPI, error) {
 	url := "http://" + c.String("etcd-host") + ":" + c.String("etcd-port")
@@ -268,7 +270,7 @@ func OboAction(c *cli.Context, wg *sync.WaitGroup) {
 	defer wg.Done()
 	CreateOntologyFolder(c)
 	for _, onto := range c.StringSlice("obo") {
-		if len(onto) == 0 {
+		if rgxp.MatchString(onto) {
 			continue
 		}
 		resp, err := DownloadObo(onto)
