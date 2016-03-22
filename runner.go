@@ -327,7 +327,12 @@ func GithubAction(c *cli.Context, wg *sync.WaitGroup) {
 	defer wg.Done()
 	CreateOntologyFolder(c)
 	client := github.NewClient(nil)
-	_, ghdir, _, err := client.Repositories.GetContents("dictyBase", "migration-data", "ontologies", nil)
+	_, ghdir, _, err := client.Repositories.GetContents(
+		"dictyBase",
+		"migration-data",
+		"ontologies",
+		&github.RepositoryContentGetOptions{"ontologies/chado-compatible"},
+	)
 	if err != nil {
 		log.WithFields(log.Fields{
 			"source": "github",
