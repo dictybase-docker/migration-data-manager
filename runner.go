@@ -268,6 +268,9 @@ func OboAction(c *cli.Context, wg *sync.WaitGroup) {
 	defer wg.Done()
 	CreateOntologyFolder(c)
 	for _, onto := range c.StringSlice("obo") {
+		if len(onto) == 0 {
+			continue
+		}
 		resp, err := DownloadObo(onto)
 		if err != nil {
 			log.WithFields(log.Fields{
@@ -284,7 +287,7 @@ func OboAction(c *cli.Context, wg *sync.WaitGroup) {
 		}
 		log.WithFields(log.Fields{
 			"source": "purl",
-			"file":   onto,
+			"file":   fmt.Sprintf("%s.obo", onto),
 		}).Info("Downloaded file")
 	}
 
