@@ -71,7 +71,7 @@ func saveObo(name string, folder string, resp *http.Response) error {
 
 func DownloadObo(name string) (*http.Response, error) {
 	client := &http.Client{}
-	req, err := http.NewRequest("GET", fmt.Sprintf("%s/%s.obo", chadoURL, name), nil)
+	req, err := http.NewRequest("GET", fmt.Sprintf("%s/%s", chadoURL, name), nil)
 	if err != nil {
 		return nil, err
 	}
@@ -273,7 +273,13 @@ func OboAction(c *cli.Context, wg *sync.WaitGroup) {
 		if rgxp.MatchString(onto) {
 			continue
 		}
-		resp, err := DownloadObo(onto)
+		ofile := fmt.Sprintf("%s.obo", onto)
+		// Don't know how it is getting through
+		// so it is brute force
+		if ofile == ".obo" {
+			continue
+		}
+		resp, err := DownloadObo(ofile)
 		if err != nil {
 			log.WithFields(log.Fields{
 				"error":  "download",
@@ -284,12 +290,12 @@ func OboAction(c *cli.Context, wg *sync.WaitGroup) {
 			log.WithFields(log.Fields{
 				"error":  err,
 				"source": "purl",
-				"file":   onto,
+				"file":   ofile,
 			}).Fatal("Unable to download")
 		}
 		log.WithFields(log.Fields{
 			"source": "purl",
-			"file":   fmt.Sprintf("%s.obo", onto),
+			"file":   ofile,
 		}).Info("Downloaded file")
 	}
 
